@@ -11,7 +11,7 @@ Exposes Sora 2 video workflows as MCP tools so AI clients can generate, edit, ex
 ```mermaid
 graph TD
     Client["MCP Client (Claude, GPT, etc.)"]
-    Client -->|"stdio (JSON-RPC)"| Server
+    Client -->|"stdio or HTTP (JSON-RPC)"| Server
 
     subgraph Server["MCP Server (powder-mcp-sora)"]
         Tools["12 Tools<br/>(tools/)"]
@@ -501,7 +501,7 @@ Set `SORA_DEBUG=true` to see full request/response bodies in stderr logs (API ke
 - File uploads are restricted to explicitly configured directories (`SORA_ALLOWED_UPLOAD_DIRS`)
 - File extension validation prevents uploading non-video files as characters
 - No arbitrary URL fetching — remote references go directly to OpenAI's API
-- The server runs over stdio transport only (no network listener)
+- In HTTP mode, deploy behind a TLS-terminating reverse proxy; `MCP_HTTP_HOST` defaults to loopback (`127.0.0.1`)
 
 ---
 
