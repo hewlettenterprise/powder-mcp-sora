@@ -1,0 +1,13 @@
+services:
+
+  mcp-sora:
+    image: yomrishon/mcp-sora:latest
+    platform: linux/amd64
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - MCP_TRANSPORT=http
+      - MCP_HTTP_PORT=3000
+      - MCP_HTTP_HOST=0.0.0.0
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
