@@ -1,0 +1,493 @@
+import { readFile } from "node:fs/promises";
+import { basename } from "node:path";
+import type { Config } from "./config.js";
+import type { Logger } from "./logger.js";
+import {
+  openaiApiError,
+  rateLimitError,
+  notFoundError,
+} from "./errors.js";
+import type {
+  VideoJob,
+  VideoContent,
+  Character,
+  VideoListResult,
+} from "./types.js";
+
+// ---------------------------------------------------------------------------
+//  Raw OpenAI response shapes (internal — not exported)
+// ---------------------------------------------------------------------------
+
+interface RawVideoResponse {
+  id: string;
+  status: string;
+  model?: string;
+  prompt?: string;
+  size?: string;
+  seconds?: number | string;
+  duration?: number | string;
+  created_at?: string | number;
+  completed_at?: string | number;
+  progress?: number;
+  error?: { code?: string; message?: string };
+  output_url?: string;
+  output_expires_at?: string;
+  [key: string]: unknown;
+}
+
+interface RawListResponse {
+  data: RawVideoResponse[];
+  has_more?: boolean;
+  first_id?: string;
+  last_id?: string;
+}
+
+interface RawContentResponse {
+  url: string;
+  content_type?: string;
+  expires_at?: string;
+  [key: string]: unknown;
+}
+
+interface RawCharacterResponse {
+  id: string;
+  name: string;
+  description?: string;
+  created_at?: string | number;
+  file_id?: string;
+  [key: string]: unknown;
+}
+
+// ---------------------------------------------------------------------------
+//  OpenAI API client
+// ---------------------------------------------------------------------------
+
+export class OpenAIClient {
+  private baseUrl: string;
+  private authHeader: string;
+  private requestCounter = 0;
+
+  constructor(
+    private config: Config,
+    private logger: Logger
+  ) {
+    this.baseUrl = config.openaiBaseUrl.replace(/\/+$/, "");
+    this.authHeader = `Bearer ${config.openaiApiKey}`;
+  }
+
+  private nextRequestId(): string {
+    return `req_${++this.requestCounter}_${Date.now()}`;
+  }
+
+  // -- Generic request helper ------------------------------------------------
+
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    extraHeaders?: Record<string, string>
+  ): Promise<T> {
+    const requestId = this.nextRequestId();
+    const url = `${this.baseUrl}${path}`;
+    const start = Date.now();
+
+    this.logger.debug("openai_request", {
+      requestId,
+      method,
+      path,
+      ...(body && this.config.debug
+        ? { body: body as Record<string, unknown> }
+        : {}),
+    });
+
+    const headers: Record<string, string> = {
+      Authorization: this.authHeader,
+      "Content-Type": "application/json",
+      ...extraHeaders,
+    };
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw openaiApiError(
+        `Network error calling OpenAI API: ${message}`,
+        undefined,
+        { requestId, path }
+      );
+    }
+
+    const elapsed = Date.now() - start;
+    this.logger.debug("openai_response", {
+      requestId,
+      status: response.status,
+      elapsed_ms: elapsed,
+    });
+
+    if (!response.ok) {
+      return this.handleErrorResponse(response, requestId, path);
+    }
+
+    const json = (await response.json()) as T;
+    if (this.config.debug) {
+      this.logger.debug("openai_response_body", {
+        requestId,
+        body: json as Record<string, unknown>,
+      });
+    }
+    return json;
+  }
+
+  private async handleErrorResponse(
+    response: Response,
+    requestId: string,
+    path: string
+  ): Promise<never> {
+    let errorBody: Record<string, unknown> = {};
+    try {
+      errorBody = (await response.json()) as Record<string, unknown>;
+    } catch {
+      // body may not be JSON
+    }
+
+    const nested = errorBody.error as Record<string, unknown> | undefined;
+    const errorMsg = nested?.message ?? errorBody.message ?? response.statusText;
+
+    if (response.status === 429) {
+      throw rateLimitError(`Rate limited by OpenAI API: ${errorMsg}`, {
+        requestId,
+        path,
+        retryAfter: response.headers.get("retry-after"),
+      });
+    }
+
+    if (response.status === 404) {
+      throw notFoundError(`Resource not found: ${errorMsg}`, {
+        requestId,
+        path,
+      });
+    }
+
+    throw openaiApiError(
+      `OpenAI API error (${response.status}): ${errorMsg}`,
+      response.status,
+      { requestId, path, upstream: errorBody }
+    );
+  }
+
+  // -- Video operations ------------------------------------------------------
+
+  async createVideo(params: {
+    model: string;
+    prompt: string;
+    size: string;
+    seconds: number;
+    input_reference?: { type: string; url?: string; file_id?: string };
+    characters?: Array<{ id: string; name: string }>;
+    metadata?: Record<string, string>;
+  }): Promise<VideoJob> {
+    const body: Record<string, unknown> = {
+      model: params.model,
+      prompt: params.prompt,
+      size: params.size,
+      duration: params.seconds,
+    };
+    if (params.input_reference) body.input_reference = params.input_reference;
+    if (params.characters?.length) body.characters = params.characters;
+    if (params.metadata) body.metadata = params.metadata;
+
+    const raw = await this.request<RawVideoResponse>(
+      "POST",
+      "/videos/generations",
+      body
+    );
+    return this.normalizeVideoJob(raw);
+  }
+
+  async getVideo(videoId: string): Promise<VideoJob> {
+    const raw = await this.request<RawVideoResponse>(
+      "GET",
+      `/videos/${encodeURIComponent(videoId)}`
+    );
+    return this.normalizeVideoJob(raw);
+  }
+
+  async listVideos(params?: {
+    limit?: number;
+    after?: string;
+    model?: string;
+    status?: string;
+  }): Promise<VideoListResult> {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set("limit", String(params.limit));
+    if (params?.after) query.set("after", params.after);
+    if (params?.model) query.set("model", params.model);
+    if (params?.status) query.set("status", params.status);
+
+    const qs = query.toString();
+    const path = `/videos${qs ? `?${qs}` : ""}`;
+    const raw = await this.request<RawListResponse>("GET", path);
+
+    return {
+      videos: raw.data.map((v) => this.normalizeVideoJob(v)),
+      has_more: raw.has_more ?? false,
+      first_id: raw.first_id,
+      last_id: raw.last_id,
+    };
+  }
+
+  async getVideoContent(videoId: string): Promise<VideoContent> {
+    const raw = await this.request<RawContentResponse>(
+      "GET",
+      `/videos/${encodeURIComponent(videoId)}/content`
+    );
+    return {
+      url: raw.url,
+      content_type: raw.content_type ?? "video/mp4",
+      expires_at: raw.expires_at ?? "",
+    };
+  }
+
+  async editVideo(params: {
+    model: string;
+    source_video_id: string;
+    prompt: string;
+    size?: string;
+    seconds?: number;
+    characters?: Array<{ id: string; name: string }>;
+  }): Promise<VideoJob> {
+    const body: Record<string, unknown> = {
+      model: params.model,
+      source_video_id: params.source_video_id,
+      prompt: params.prompt,
+    };
+    if (params.size) body.size = params.size;
+    if (params.seconds) body.duration = params.seconds;
+    if (params.characters?.length) body.characters = params.characters;
+
+    const raw = await this.request<RawVideoResponse>(
+      "POST",
+      "/videos/edits",
+      body
+    );
+    return this.normalizeVideoJob(raw);
+  }
+
+  async extendVideo(params: {
+    model: string;
+    video_id: string;
+    prompt: string;
+    seconds?: number;
+  }): Promise<VideoJob> {
+    const body: Record<string, unknown> = {
+      model: params.model,
+      video_id: params.video_id,
+      prompt: params.prompt,
+    };
+    if (params.seconds) body.duration = params.seconds;
+
+    const raw = await this.request<RawVideoResponse>(
+      "POST",
+      "/videos/extensions",
+      body
+    );
+    return this.normalizeVideoJob(raw);
+  }
+
+  async remixVideo(params: {
+    model: string;
+    source_video_id: string;
+    prompt: string;
+    size?: string;
+    seconds?: number;
+  }): Promise<VideoJob> {
+    const body: Record<string, unknown> = {
+      model: params.model,
+      source_video_id: params.source_video_id,
+      prompt: params.prompt,
+    };
+    if (params.size) body.size = params.size;
+    if (params.seconds) body.duration = params.seconds;
+
+    const raw = await this.request<RawVideoResponse>(
+      "POST",
+      "/videos/remixes",
+      body
+    );
+    return this.normalizeVideoJob(raw);
+  }
+
+  // -- Character operations --------------------------------------------------
+
+  async createCharacter(params: {
+    name: string;
+    file_path?: string;
+    file_id?: string;
+    description?: string;
+  }): Promise<Character> {
+    if (params.file_path) {
+      const fileId = await this.uploadFile(params.file_path);
+      return this.createCharacterFromFileId(
+        params.name,
+        fileId,
+        params.description
+      );
+    }
+    if (params.file_id) {
+      return this.createCharacterFromFileId(
+        params.name,
+        params.file_id,
+        params.description
+      );
+    }
+    throw openaiApiError(
+      "Either file_path or file_id is required to create a character."
+    );
+  }
+
+  private async uploadFile(filePath: string): Promise<string> {
+    const fileBuffer = await readFile(filePath);
+    const fileName = basename(filePath);
+
+    const formData = new FormData();
+    formData.append("purpose", "video");
+    formData.append("file", new Blob([fileBuffer]), fileName);
+
+    const requestId = this.nextRequestId();
+    const url = `${this.baseUrl}/files`;
+    const start = Date.now();
+
+    this.logger.debug("openai_file_upload", { requestId, fileName });
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: this.authHeader },
+        body: formData,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw openaiApiError(
+        `Network error uploading file: ${message}`,
+        undefined,
+        { requestId }
+      );
+    }
+
+    const elapsed = Date.now() - start;
+    this.logger.debug("openai_file_upload_response", {
+      requestId,
+      status: response.status,
+      elapsed_ms: elapsed,
+    });
+
+    if (!response.ok) {
+      return this.handleErrorResponse(response, requestId, "/files");
+    }
+
+    const json = (await response.json()) as {
+      id: string;
+      [key: string]: unknown;
+    };
+    return json.id;
+  }
+
+  private async createCharacterFromFileId(
+    name: string,
+    fileId: string,
+    description?: string
+  ): Promise<Character> {
+    const body: Record<string, unknown> = { name, file_id: fileId };
+    if (description) body.description = description;
+
+    const raw = await this.request<RawCharacterResponse>(
+      "POST",
+      "/videos/characters",
+      body
+    );
+    return this.normalizeCharacter(raw);
+  }
+
+  async getCharacter(characterId: string): Promise<Character> {
+    const raw = await this.request<RawCharacterResponse>(
+      "GET",
+      `/videos/characters/${encodeURIComponent(characterId)}`
+    );
+    return this.normalizeCharacter(raw);
+  }
+
+  // -- Normalization ---------------------------------------------------------
+
+  private normalizeVideoJob(raw: RawVideoResponse): VideoJob {
+    const status = this.normalizeStatus(raw.status);
+    const seconds = Number(raw.seconds ?? raw.duration ?? 0);
+
+    const createdAt =
+      typeof raw.created_at === "number"
+        ? new Date(raw.created_at * 1000).toISOString()
+        : (raw.created_at ?? new Date().toISOString());
+
+    const completedAt =
+      raw.completed_at != null
+        ? typeof raw.completed_at === "number"
+          ? new Date(raw.completed_at * 1000).toISOString()
+          : raw.completed_at
+        : undefined;
+
+    const job: VideoJob = {
+      id: raw.id,
+      status,
+      model: raw.model ?? "",
+      prompt: raw.prompt ?? "",
+      size: raw.size ?? "",
+      seconds,
+      created_at: createdAt,
+    };
+
+    if (completedAt) job.completed_at = completedAt;
+    if (raw.progress != null) job.progress = Number(raw.progress);
+    if (raw.error) {
+      job.error = {
+        code: raw.error.code ?? "unknown",
+        message: raw.error.message ?? "Unknown error",
+      };
+    }
+    if (raw.output_url) job.output_url = raw.output_url;
+    if (raw.output_expires_at) job.output_expires_at = raw.output_expires_at;
+
+    return job;
+  }
+
+  private normalizeStatus(status: string): VideoJob["status"] {
+    switch (status) {
+      case "queued":
+      case "in_progress":
+      case "completed":
+      case "failed":
+        return status;
+      default:
+        return "in_progress";
+    }
+  }
+
+  private normalizeCharacter(raw: RawCharacterResponse): Character {
+    const createdAt =
+      typeof raw.created_at === "number"
+        ? new Date(raw.created_at * 1000).toISOString()
+        : (raw.created_at ?? new Date().toISOString());
+
+    return {
+      id: raw.id,
+      name: raw.name,
+      description: raw.description,
+      created_at: createdAt,
+      file_id: raw.file_id,
+    };
+  }
+}

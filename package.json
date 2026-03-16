@@ -1,0 +1,26 @@
+{
+  "name": "powder-mcp-sora",
+  "version": "1.0.0",
+  "description": "MCP server for OpenAI Sora 2 video generation",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "powder-mcp-sora": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
