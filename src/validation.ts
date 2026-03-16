@@ -103,6 +103,51 @@ export function validateImageReferenceSupport(model: string): void {
 }
 
 /**
+ * Validate an input_reference and normalize base64 to image_url with a data URI.
+ * Returns a reference object ready for the OpenAI API (always image_url or file_id).
+ */
+export function normalizeInputReference(ref: {
+  type: string;
+  url?: string;
+  file_id?: string;
+  base64?: string;
+  media_type?: string;
+}): { type: string; url?: string; file_id?: string } {
+  if (ref.type === "image_url") {
+    if (!ref.url) {
+      throw validationError(
+        'input_reference type "image_url" requires a "url" field.'
+      );
+    }
+    return { type: "image_url", url: ref.url };
+  }
+
+  if (ref.type === "file_id") {
+    if (!ref.file_id) {
+      throw validationError(
+        'input_reference type "file_id" requires a "file_id" field.'
+      );
+    }
+    return { type: "file_id", file_id: ref.file_id };
+  }
+
+  if (ref.type === "base64") {
+    if (!ref.base64) {
+      throw validationError(
+        'input_reference type "base64" requires a "base64" field with raw base64-encoded image data.'
+      );
+    }
+    const mediaType = ref.media_type ?? "image/png";
+    const dataUri = `data:${mediaType};base64,${ref.base64}`;
+    return { type: "image_url", url: dataUri };
+  }
+
+  throw validationError(
+    `Unknown input_reference type "${ref.type}". Allowed: image_url, file_id, base64.`
+  );
+}
+
+/**
  * Validate and resolve a local file path against allowed upload directories.
  * Returns the resolved absolute path if valid.
  */
@@ -193,20 +238,39 @@ export const CreateVideoSchema = {
   input_reference: z
     .object({
       type: z
-        .enum(["image_url", "file_id"])
-        .describe("Type of input reference"),
+        .enum(["image_url", "file_id", "base64"])
+        .describe(
+          "Type of input reference: 'image_url' for a remote URL, 'file_id' for an uploaded file, " +
+          "or 'base64' for inline base64-encoded image data."
+        ),
       url: z
         .string()
         .optional()
-        .describe("Image URL (when type=image_url)"),
+        .describe("Image URL (when type=image_url)."),
       file_id: z
         .string()
         .optional()
-        .describe("Uploaded file ID (when type=file_id)"),
+        .describe("Uploaded file ID (when type=file_id)."),
+      base64: z
+        .string()
+        .optional()
+        .describe(
+          "Raw base64-encoded image data without the data URI prefix (when type=base64). " +
+          "Example: 'iVBORw0KGgo...'"
+        ),
+      media_type: z
+        .enum(["image/png", "image/jpeg", "image/webp", "image/gif"])
+        .optional()
+        .describe(
+          "MIME type of the base64 image (when type=base64). Defaults to 'image/png'. " +
+          "Allowed: image/png, image/jpeg, image/webp, image/gif."
+        ),
     })
     .optional()
     .describe(
-      "Optional image reference to guide the opening frame or look. Different from characters — this sets the visual starting point for a single generation."
+      "Optional image reference to guide the opening frame or look. Different from characters — " +
+      "this sets the visual starting point for a single generation. Supports remote URLs, " +
+      "uploaded file IDs, or inline base64-encoded images."
     ),
   characters: z
     .array(

@@ -9,6 +9,7 @@ import {
   validateDuration,
   validateCharacterSupport,
   validateImageReferenceSupport,
+  normalizeInputReference,
 } from "../validation.js";
 import { formatErrorForMcp } from "../errors.js";
 
@@ -48,14 +49,25 @@ export function register(
 
         logger.info("create_video", { model, size, seconds });
 
+        // Normalize base64 input references to data URIs before sending
+        const inputRef = params.input_reference
+          ? normalizeInputReference(
+              params.input_reference as {
+                type: string;
+                url?: string;
+                file_id?: string;
+                base64?: string;
+                media_type?: string;
+              }
+            )
+          : undefined;
+
         const job = await client.createVideo({
           model,
           prompt: params.prompt as string,
           size,
           seconds,
-          input_reference: params.input_reference as
-            | { type: string; url?: string; file_id?: string }
-            | undefined,
+          input_reference: inputRef,
           characters: params.characters as
             | Array<{ id: string; name: string }>
             | undefined,
