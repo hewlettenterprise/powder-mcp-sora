@@ -1,15 +1,22 @@
 #!/usr/bin/env node
 
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadConfig } from "./config.js";
 import { createServer } from "./server.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const server = createServer(config);
-  const transport = new StdioServerTransport();
+  const ctx = createServer(config);
 
-  await server.connect(transport);
+  if (config.transport === "http") {
+    const { startHttpServer } = await import("./http-server.js");
+    await startHttpServer(ctx, config);
+  } else {
+    const { StdioServerTransport } = await import(
+      "@modelcontextprotocol/sdk/server/stdio.js"
+    );
+    const transport = new StdioServerTransport();
+    await ctx.server.connect(transport);
+  }
 }
 
 main().catch((err) => {

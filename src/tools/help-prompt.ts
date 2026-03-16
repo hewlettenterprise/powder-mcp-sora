@@ -7,7 +7,7 @@ import { formatErrorForMcp } from "../errors.js";
 
 export function register(
   server: McpServer,
-  _client: OpenAIClient,
+  _client: OpenAIClient | null,
   _config: Config,
   _logger: Logger
 ): void {

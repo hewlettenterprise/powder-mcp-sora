@@ -54,8 +54,10 @@ powder-mcp-sora/
 ├── .env.example
 ├── README.md
 └── src/
-    ├── index.ts              # Entry point
+    ├── index.ts              # Entry point (stdio / HTTP auto-select)
     ├── server.ts             # MCP server factory
+    ├── http-server.ts        # Streamable HTTP transport server
+    ├── request-context.ts    # Per-request client via AsyncLocalStorage
     ├── config.ts             # Environment configuration
     ├── types.ts              # Shared types (VideoJob, Character, etc.)
     ├── errors.ts             # Typed error system
@@ -65,19 +67,19 @@ powder-mcp-sora/
     ├── validation.ts         # Zod schemas + validation helpers
     ├── polling.ts            # Poll-until-complete utility
     └── tools/
-        ├── index.ts              # Tool registration orchestrator
-        ├── create-video.ts       # sora_create_video
-        ├── get-video.ts          # sora_get_video
-        ├── list-videos.ts        # sora_list_videos
-        ├── download-video.ts     # sora_download_video_content
-        ├── edit-video.ts         # sora_edit_video
-        ├── extend-video.ts       # sora_extend_video
-        ├── create-character.ts   # sora_create_character
-        ├── get-character.ts      # sora_get_character
-        ├── wait-for-video.ts     # sora_wait_for_video
-        ├── remix-video.ts        # sora_remix_video (deprecated)
+        ├── index.ts                  # Tool registration orchestrator
+        ├── create-video.ts           # sora_create_video
+        ├── get-video.ts              # sora_get_video
+        ├── list-videos.ts            # sora_list_videos
+        ├── download-video.ts         # sora_download_video_content
+        ├── edit-video.ts             # sora_edit_video
+        ├── extend-video.ts           # sora_extend_video
+        ├── create-character.ts       # sora_create_character
+        ├── get-character.ts          # sora_get_character
+        ├── wait-for-video.ts         # sora_wait_for_video
+        ├── remix-video.ts            # sora_remix_video (deprecated)
         ├── describe-capabilities.ts  # sora_describe_capabilities
-        └── help-prompt.ts        # sora_help_prompt
+        └── help-prompt.ts            # sora_help_prompt
 ```
 
 ---
@@ -106,22 +108,25 @@ cp .env.example .env
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `OPENAI_API_KEY` | **Yes** | — | Your OpenAI API key |
+| `OPENAI_API_KEY` | **stdio** | — | OpenAI API key (required in stdio mode; optional in HTTP mode) |
 | `OPENAI_BASE_URL` | No | `https://api.openai.com/v1` | API base URL |
 | `SORA_DEFAULT_MODEL` | No | `sora-2` | Default model for generation |
 | `SORA_MAX_POLL_SECONDS` | No | `300` | Max polling duration |
 | `SORA_POLL_INTERVAL_MS` | No | `5000` | Polling interval |
 | `SORA_DEBUG` | No | `false` | Enable debug logging |
 | `SORA_ALLOWED_UPLOAD_DIRS` | No | `/tmp` | Comma-separated allowed upload directories |
+| `MCP_TRANSPORT` | No | `stdio` | Transport mode: `stdio` or `http` |
+| `MCP_HTTP_PORT` | No | `3000` | HTTP listen port (HTTP mode only) |
+| `MCP_HTTP_HOST` | No | `127.0.0.1` | HTTP listen host (HTTP mode only) |
 
 ### Run
 
 ```bash
-# Direct
+# Stdio mode (default)
 node dist/index.js
 
-# Or via npm
-npm start
+# HTTP mode
+MCP_TRANSPORT=http node dist/index.js
 ```
 
 ### Docker
@@ -186,6 +191,59 @@ Add to your MCP settings (e.g., `claude_desktop_config.json` or VS Code MCP sett
   }
 }
 ```
+
+### HTTP transport (remote / multi-client)
+
+When `MCP_TRANSPORT=http`, the server starts a Streamable HTTP endpoint instead of using stdio.
+Each request carries its own API key via the `Authorization` header, so a single server instance can serve many clients with different OpenAI accounts.
+
+#### Start the server
+
+```bash
+MCP_TRANSPORT=http MCP_HTTP_PORT=3000 node dist/index.js
+```
+
+Or with Docker:
+
+```bash
+docker run -p 3000:3000 \
+  -e MCP_TRANSPORT=http \
+  -e MCP_HTTP_HOST=0.0.0.0 \
+  powder-mcp-sora
+```
+
+#### Client configuration (HTTP)
+
+Point your MCP client at the HTTP endpoint:
+
+```json
+{
+  "mcpServers": {
+    "sora": {
+      "url": "http://localhost:3000/mcp",
+      "headers": {
+        "Authorization": "Bearer sk-..."
+      }
+    }
+  }
+}
+```
+
+#### Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/mcp` | MCP JSON-RPC endpoint (requires `Authorization: Bearer <key>`) |
+| `GET` | `/mcp` | SSE stream for server-initiated messages |
+| `DELETE` | `/mcp` | Session close (no-op in stateless mode) |
+| `GET` | `/health` | Health check — returns `{"status":"ok"}` |
+
+#### Security considerations for HTTP mode
+
+- The server runs **stateless** — no session tokens or cookies are stored.
+- Always deploy behind a TLS-terminating reverse proxy (nginx, Caddy, etc.) in production.
+- `MCP_HTTP_HOST` defaults to `127.0.0.1` (loopback only). Set to `0.0.0.0` to accept remote connections.
+- If `OPENAI_API_KEY` is set alongside HTTP mode, it acts as a fallback when clients omit the header.
 
 ---
 

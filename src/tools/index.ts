@@ -19,7 +19,7 @@ import { register as registerHelpPrompt } from "./help-prompt.js";
 /** Register all MCP tools on the server. */
 export function registerAllTools(
   server: McpServer,
-  client: OpenAIClient,
+  client: OpenAIClient | null,
   config: Config,
   logger: Logger
 ): void {

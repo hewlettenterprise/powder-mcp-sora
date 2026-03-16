@@ -12,10 +12,11 @@ import {
   normalizeInputReference,
 } from "../validation.js";
 import { formatErrorForMcp } from "../errors.js";
+import { getRequestClient } from "../request-context.js";
 
 export function register(
   server: McpServer,
-  client: OpenAIClient,
+  defaultClient: OpenAIClient | null,
   config: Config,
   logger: Logger
 ): void {
@@ -32,6 +33,7 @@ export function register(
     },
     async (params) => {
       try {
+        const client = getRequestClient(defaultClient);
         const model = (params.model as string) ?? config.defaultModel;
         const size = (params.size as string) ?? "1920x1080";
         const seconds = (params.seconds as number) ?? 10;

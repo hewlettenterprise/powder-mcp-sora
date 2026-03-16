@@ -4,10 +4,11 @@ import type { Config } from "../config.js";
 import type { Logger } from "../logger.js";
 import { GetCharacterSchema } from "../validation.js";
 import { formatErrorForMcp } from "../errors.js";
+import { getRequestClient } from "../request-context.js";
 
 export function register(
   server: McpServer,
-  client: OpenAIClient,
+  defaultClient: OpenAIClient | null,
   _config: Config,
   logger: Logger
 ): void {
@@ -21,6 +22,7 @@ export function register(
     },
     async (params) => {
       try {
+        const client = getRequestClient(defaultClient);
         const characterId = params.character_id as string;
         logger.info("get_character", { characterId });
 

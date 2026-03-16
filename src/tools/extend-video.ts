@@ -10,10 +10,11 @@ import {
 } from "../validation.js";
 import { formatErrorForMcp, assetError } from "../errors.js";
 import { getModelCapabilities } from "../capabilities.js";
+import { getRequestClient } from "../request-context.js";
 
 export function register(
   server: McpServer,
-  client: OpenAIClient,
+  defaultClient: OpenAIClient | null,
   config: Config,
   logger: Logger
 ): void {
@@ -29,6 +30,7 @@ export function register(
     },
     async (params) => {
       try {
+        const client = getRequestClient(defaultClient);
         const model = (params.model as string) ?? config.defaultModel;
 
         validateModel(model);

@@ -4,10 +4,11 @@ import type { Config } from "../config.js";
 import type { Logger } from "../logger.js";
 import { DownloadVideoSchema } from "../validation.js";
 import { formatErrorForMcp, assetError } from "../errors.js";
+import { getRequestClient } from "../request-context.js";
 
 export function register(
   server: McpServer,
-  client: OpenAIClient,
+  defaultClient: OpenAIClient | null,
   _config: Config,
   logger: Logger
 ): void {
@@ -23,6 +24,7 @@ export function register(
     },
     async (params) => {
       try {
+        const client = getRequestClient(defaultClient);
         const videoId = params.video_id as string;
         logger.info("download_video_content", { videoId });
 

@@ -5,10 +5,11 @@ import type { Logger } from "../logger.js";
 import { WaitForVideoSchema } from "../validation.js";
 import { formatErrorForMcp } from "../errors.js";
 import { pollUntilComplete } from "../polling.js";
+import { getRequestClient } from "../request-context.js";
 
 export function register(
   server: McpServer,
-  client: OpenAIClient,
+  defaultClient: OpenAIClient | null,
   config: Config,
   logger: Logger
 ): void {
@@ -25,6 +26,7 @@ export function register(
     },
     async (params) => {
       try {
+        const client = getRequestClient(defaultClient);
         const videoId = params.video_id as string;
         const pollIntervalMs =
           (params.poll_interval_ms as number) ?? config.pollIntervalMs;

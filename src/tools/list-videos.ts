@@ -4,10 +4,11 @@ import type { Config } from "../config.js";
 import type { Logger } from "../logger.js";
 import { ListVideosSchema } from "../validation.js";
 import { formatErrorForMcp } from "../errors.js";
+import { getRequestClient } from "../request-context.js";
 
 export function register(
   server: McpServer,
-  client: OpenAIClient,
+  defaultClient: OpenAIClient | null,
   _config: Config,
   logger: Logger
 ): void {
@@ -22,6 +23,7 @@ export function register(
     },
     async (params) => {
       try {
+        const client = getRequestClient(defaultClient);
         logger.info("list_videos", {
           limit: params.limit,
           model: params.model,

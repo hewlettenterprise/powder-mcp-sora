@@ -4,10 +4,11 @@ import type { Config } from "../config.js";
 import type { Logger } from "../logger.js";
 import { CreateCharacterSchema, validateVideoFile } from "../validation.js";
 import { formatErrorForMcp, validationError } from "../errors.js";
+import { getRequestClient } from "../request-context.js";
 
 export function register(
   server: McpServer,
-  client: OpenAIClient,
+  defaultClient: OpenAIClient | null,
   config: Config,
   logger: Logger
 ): void {
@@ -24,6 +25,7 @@ export function register(
     },
     async (params) => {
       try {
+        const client = getRequestClient(defaultClient);
         const filePath = params.file_path as string | undefined;
         const fileId = params.file_id as string | undefined;
 
