@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/powder-mcp-sora
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/yomrishon-mcp-sora
 
 jobs:
   build-and-push:

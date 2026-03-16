@@ -1,11 +1,11 @@
 {
-  "name": "powder-mcp-sora",
+  "name": "yomrishon-mcp-sora",
   "version": "1.0.0",
   "description": "MCP server for OpenAI Sora 2 video generation",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "powder-mcp-sora": "dist/index.js"
+    "yomrishon-mcp-sora": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",

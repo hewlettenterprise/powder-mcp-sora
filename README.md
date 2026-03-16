@@ -1,4 +1,4 @@
-# powder-mcp-sora
+# yomrishon-mcp-sora
 
 A production-ready **Model Context Protocol (MCP) server** for **OpenAI Sora 2** video generation.
 
@@ -13,7 +13,7 @@ graph TD
     Client["MCP Client (Claude, GPT, etc.)"]
     Client -->|"stdio or HTTP (JSON-RPC)"| Server
 
-    subgraph Server["MCP Server (powder-mcp-sora)"]
+    subgraph Server["MCP Server (yomrishon-mcp-sora)"]
         Tools["12 Tools<br/>(tools/)"]
         Validation["Validation<br/>(Zod)"]
         Capabilities["Capability<br/>Registry"]
@@ -48,7 +48,7 @@ graph TD
 ## Project structure
 
 ```
-powder-mcp-sora/
+yomrishon-mcp-sora/
 ├── package.json
 ├── tsconfig.json
 ├── .env.example
@@ -94,7 +94,7 @@ powder-mcp-sora/
 ### Install
 
 ```bash
-git clone <repo-url> && cd powder-mcp-sora
+git clone <repo-url> && cd yomrishon-mcp-sora
 npm install
 npm run build
 ```
@@ -133,10 +133,10 @@ MCP_TRANSPORT=http node dist/index.js
 
 ```bash
 # Build
-docker build -t powder-mcp-sora .
+docker build -t yomrishon-mcp-sora .
 
 # Run
-docker run -e OPENAI_API_KEY=sk-... powder-mcp-sora
+docker run -e OPENAI_API_KEY=sk-... yomrishon-mcp-sora
 ```
 
 ### CI/CD
@@ -167,7 +167,7 @@ Add to your MCP settings (e.g., `claude_desktop_config.json` or VS Code MCP sett
   "mcpServers": {
     "sora": {
       "command": "node",
-      "args": ["/absolute/path/to/powder-mcp-sora/dist/index.js"],
+      "args": ["/absolute/path/to/yomrishon-mcp-sora/dist/index.js"],
       "env": {
         "OPENAI_API_KEY": "sk-..."
       }
@@ -183,7 +183,7 @@ Add to your MCP settings (e.g., `claude_desktop_config.json` or VS Code MCP sett
   "mcpServers": {
     "sora": {
       "command": "npx",
-      "args": ["powder-mcp-sora"],
+      "args": ["yomrishon-mcp-sora"],
       "env": {
         "OPENAI_API_KEY": "sk-..."
       }
@@ -209,7 +209,7 @@ Or with Docker:
 docker run -p 3000:3000 \
   -e MCP_TRANSPORT=http \
   -e MCP_HTTP_HOST=0.0.0.0 \
-  powder-mcp-sora
+  yomrishon-mcp-sora
 ```
 
 #### Client configuration (HTTP)

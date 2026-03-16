@@ -1,8 +1,12 @@
+import { createRequire } from "node:module";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Config } from "./config.js";
 import { Logger } from "./logger.js";
 import { OpenAIClient } from "./openai-client.js";
 import { registerAllTools } from "./tools/index.js";
+
+const require = createRequire(import.meta.url);
+const pkg = require("../package.json") as { name: string; version: string };
 
 export interface ServerContext {
   server: McpServer;
@@ -25,8 +29,8 @@ export function createServer(config: Config): ServerContext {
     : null;
 
   const server = new McpServer({
-    name: "powder-mcp-sora",
-    version: "1.0.0",
+    name: pkg.name,
+    version: pkg.version,
   });
 
   registerAllTools(server, defaultClient, config, logger);
