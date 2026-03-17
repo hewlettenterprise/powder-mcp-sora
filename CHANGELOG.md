@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/Yom-Rishon/yomrishon-mcp-sora/compare/v1.2.0...v1.3.0) (2026-03-17)
+
+
+### Features
+
+* update Docker publish workflow to read version from package.json and adjust tagging ([32a6322](https://github.com/Yom-Rishon/yomrishon-mcp-sora/commit/32a6322be6700066534beb2ea1cb3f8e80a0756a))
+
 ## [1.2.0](https://github.com/Yom-Rishon/yomrishon-mcp-sora/compare/v1.1.0...v1.2.0) (2026-03-17)
 
 
