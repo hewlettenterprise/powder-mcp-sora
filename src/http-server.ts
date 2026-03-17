@@ -194,6 +194,10 @@ export async function startHttpServer(
     res.end(JSON.stringify({ error: "Not found" }));
   });
 
+  // Disable the default 5-minute request timeout so SSE streams
+  // (used by Streamable HTTP transport) are not terminated prematurely.
+  httpServer.requestTimeout = 0;
+
   httpServer.listen(config.httpPort, config.httpHost, () => {
     ctx.logger.info("http_server_started", {
       port: config.httpPort,
