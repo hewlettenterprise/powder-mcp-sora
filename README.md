@@ -66,6 +66,7 @@ yomrishon-mcp-sora/
     ├── openai-client.ts      # OpenAI API adapter
     ├── validation.ts         # Zod schemas + validation helpers
     ├── polling.ts            # Poll-until-complete utility
+    ├── download-tokens.ts    # Short-lived download token store
     └── tools/
         ├── index.ts                  # Tool registration orchestrator
         ├── create-video.ts           # sora_create_video
@@ -237,6 +238,7 @@ Point your MCP client at the HTTP endpoint:
 | `GET` | `/mcp` | SSE stream for server-initiated messages |
 | `DELETE` | `/mcp` | Session close (no-op in stateless mode) |
 | `GET` | `/health` | Health check — returns `{"status":"ok"}` |
+| `GET` | `/download/:token` | Proxy download — streams video content using a short-lived token (no API key needed) |
 
 #### Security considerations for HTTP mode
 
@@ -343,7 +345,7 @@ List recent jobs with optional filters.
 
 ### `sora_download_video_content`
 
-Get a download URL for a completed video.
+Get a download URL for a completed video. Returns a proxy URL that can be used directly **without an API key**.
 
 ```json
 {
@@ -351,7 +353,17 @@ Get a download URL for a completed video.
 }
 ```
 
-Returns `{ url, content_type, expires_at }`. Download before the URL expires.
+Returns:
+
+```json
+{
+  "download_url": "http://localhost:3000/download/<token>",
+  "content_type": "video/mp4",
+  "expires_in_seconds": 600
+}
+```
+
+The `download_url` is single-use and expires after 10 minutes. Call the tool again to get a fresh URL.
 
 ---
 
@@ -501,6 +513,7 @@ Set `SORA_DEBUG=true` to see full request/response bodies in stderr logs (API ke
 - File uploads are restricted to explicitly configured directories (`SORA_ALLOWED_UPLOAD_DIRS`)
 - File extension validation prevents uploading non-video files as characters
 - No arbitrary URL fetching — remote references go directly to OpenAI's API
+- Video download URLs use single-use, time-limited tokens (10-minute expiry) — the upstream API key is never exposed to clients
 - In HTTP mode, deploy behind a TLS-terminating reverse proxy; `MCP_HTTP_HOST` defaults to loopback (`127.0.0.1`)
 
 ---
